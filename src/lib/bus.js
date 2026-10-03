@@ -3,7 +3,10 @@
 // Three layers, so the demo works in every setup:
 //   1. In-memory listeners  → Dispatcher + Commuter in the SAME tab (split view)
 //   2. BroadcastChannel     → other tabs/windows in the SAME browser, no server needed
-//   3. WebSocket relay      → other DEVICES (e.g. phones) on the network, via server/relay.js
+//   3. Other DEVICES (e.g. phones), one of two ways:
+//      • Local / self-hosted: WebSocket relay (server/relay.js), instant.
+//      • Deployed on Vercel:  /api/alerts, checked every couple of seconds
+//        (Vercel can't keep a WebSocket server running).
 //
 // Alerts are de-duplicated by id, so an alert arriving over several layers is
 // only shown and spoken once. History persists in localStorage.
@@ -14,6 +17,12 @@ const MAX_HISTORY = 100;
 const RELAY_URL =
   import.meta.env.VITE_RELAY_URL ||
   `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:8787`;
+
+// On a deployed HTTPS site with no relay configured (e.g. Vercel), use the /api functions.
+const USE_API =
+  import.meta.env.VITE_USE_API === '1' || (location.protocol === 'https:' && !import.meta.env.VITE_RELAY_URL);
+const POLL_MS = 2000;
+const POLL_HIDDEN_MS = 15000;
 
 function loadHistory() {
   try {
@@ -39,8 +48,8 @@ function makeId() {
 let state = {
   alerts: loadHistory(),
   relay: 'connecting', // 'connecting' | 'online' | 'offline'
-  devices: 0,
-  tts: false, // relay has an AI voice (ElevenLabs) configured
+  devices: USE_API ? null : 0, // null = unknown (API mode can't count devices)
+  tts: false, // server has an AI voice (ElevenLabs) configured
 };
 const seen = new Set(state.alerts.map((a) => a.id));
 const stateListeners = new Set();
@@ -77,7 +86,7 @@ channel?.addEventListener('message', ({ data }) => {
   if (data?.type === 'clear') clearLocal();
 });
 
-// ---- Layer 3: WebSocket relay (cross-device) --------------------------------
+// ---- Layer 3a: WebSocket relay (cross-device, local) -------------------------
 let ws = null;
 let retryMs = 1000;
 
@@ -127,17 +136,75 @@ function scheduleReconnect() {
   retryMs = Math.min(retryMs * 2, 15000);
 }
 
-connect();
+// ---- Layer 3b: HTTP API (cross-device, Vercel) --------------------------------
+// The server's list is the source of truth. Any id we haven't seen before is a
+// new alert and gets announced (except on the very first load, which is history).
+let synced = false;
+let pollTimer = null;
+let polling = false;
+const pending = new Map(); // alerts sent from here that the server hasn't returned yet
 
-// The relay also serves AI voice audio over plain HTTP on the same port.
+async function poll() {
+  if (polling) return;
+  polling = true;
+  clearTimeout(pollTimer);
+  try {
+    const res = await fetch('/api/alerts', { cache: 'no-store' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.configured) throw new Error(data.error || `HTTP ${res.status}`);
+
+    const server = data.alerts;
+    const fresh = server.filter((a) => !seen.has(a.id));
+    server.forEach((a) => {
+      seen.add(a.id);
+      pending.delete(a.id);
+    });
+
+    // Keep alerts we just sent that haven't shown up on the server yet.
+    for (const [id, a] of pending) if (Date.now() - a.createdAt > 30000) pending.delete(id);
+    const alerts = [...server, ...pending.values()].sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_HISTORY);
+    saveHistory(alerts);
+    setState({ alerts, relay: 'online', tts: Boolean(data.tts) });
+
+    if (synced) fresh.forEach((a) => liveListeners.forEach((fn) => fn(a)));
+    synced = true;
+  } catch (err) {
+    if (state.relay !== 'offline') console.warn('[TransitAlert] Alerts API unavailable:', err.message);
+    setState({ relay: 'offline', tts: false });
+  } finally {
+    polling = false;
+    pollTimer = setTimeout(poll, document.hidden ? POLL_HIDDEN_MS : POLL_MS);
+  }
+}
+
+// Check right away when the phone comes back to the tab.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && USE_API) poll();
+});
+
+async function apiSend(method, body) {
+  const res = await fetch('/api/alerts', {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+if (USE_API) poll();
+else connect();
+
+// The relay serves AI voice audio over plain HTTP on the same port.
 const HTTP_BASE = RELAY_URL.replace(/^ws/, 'http');
 
 // ---- Public API -------------------------------------------------------------
 export const bus = {
   getState: () => state,
-  relayUrl: RELAY_URL,
-  ttsUrl: (alertId) => `${HTTP_BASE}/tts/${encodeURIComponent(alertId)}`,
-  phraseUrl: (key) => `${HTTP_BASE}/tts/phrase/${encodeURIComponent(key)}`,
+  mode: USE_API ? 'api' : 'relay',
+  ttsUrl: (alertId) =>
+    USE_API ? `/api/tts?id=${encodeURIComponent(alertId)}` : `${HTTP_BASE}/tts/${encodeURIComponent(alertId)}`,
+  phraseUrl: (key) =>
+    USE_API ? `/api/tts?phrase=${encodeURIComponent(key)}` : `${HTTP_BASE}/tts/phrase/${encodeURIComponent(key)}`,
 
   subscribe(fn) {
     stateListeners.add(fn);
@@ -160,13 +227,23 @@ export const bus = {
     };
     ingest(alert, { live: true });
     channel?.postMessage({ type: 'alert', alert });
-    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'alert', alert }));
+    if (USE_API) {
+      pending.set(alert.id, alert);
+      apiSend('POST', { alert }).catch((err) => console.warn('[TransitAlert] Broadcast failed:', err.message));
+    } else if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'alert', alert }));
+    }
     return alert;
   },
 
   clear() {
     clearLocal();
     channel?.postMessage({ type: 'clear' });
-    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'clear' }));
+    if (USE_API) {
+      pending.clear();
+      apiSend('DELETE').catch((err) => console.warn('[TransitAlert] Clear failed:', err.message));
+    } else if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'clear' }));
+    }
   },
 };

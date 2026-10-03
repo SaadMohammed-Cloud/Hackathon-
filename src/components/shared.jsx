@@ -122,7 +122,9 @@ export function ConnectionStatus() {
   const { relay, devices } = useBus();
   const text =
     relay === 'online'
-      ? `${devices} ${devices === 1 ? 'device' : 'devices'} connected`
+      ? devices == null
+        ? 'Live'
+        : `${devices} ${devices === 1 ? 'device' : 'devices'} connected`
       : relay === 'connecting'
         ? 'Connecting'
         : 'This browser only';
@@ -133,7 +135,7 @@ export function ConnectionStatus() {
       title={
         relay === 'online'
           ? 'Alerts reach every device connected to the relay.'
-          : 'The relay isn’t running, so alerts only sync between tabs in this browser.'
+          : 'Can’t reach the alert server, so alerts only sync between tabs in this browser.'
       }
     >
       <span className={`h-2 w-2 rounded-full ${dot}`} aria-hidden />

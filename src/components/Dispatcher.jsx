@@ -3,6 +3,7 @@ import { PriorityBadge, PriorityMark, RouteBullets, Sheet, StationList } from '.
 import { bus } from '../lib/bus.js';
 import { ALL_STATIONS_ID, PRIORITIES, QUICK_ALERTS, getStation } from '../lib/stations.js';
 import { dayLabel, formatAgo, formatClock, useBus, useNow, usePersistentState } from '../lib/hooks.js';
+import { useDictation } from '../lib/dictation.js';
 
 const MAX_LEN = 500;
 
@@ -15,7 +16,23 @@ export default function Dispatcher({ embedded = false }) {
   const [sent, setSent] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [pickingStation, setPickingStation] = useState(false);
+  const [autoSend, setAutoSend] = usePersistentState('transitalert:dispatch:autosend', false);
   const textRef = useRef(null);
+
+  const dictation = useDictation({
+    onText: (text) => setMessage(text.slice(0, MAX_LEN)),
+    onDone: (text) => {
+      if (!text) return;
+      setMessage(text.slice(0, MAX_LEN));
+      if (autoSendRef.current) broadcast(text.slice(0, MAX_LEN));
+      else textRef.current?.focus();
+    },
+  });
+  const autoSendRef = useRef(autoSend);
+  autoSendRef.current = autoSend;
+  // Latest station/priority for an auto-send that fires after the mic stops.
+  const latest = useRef({ stationId, priority });
+  latest.current = { stationId, priority };
 
   const station = getStation(stationId);
   const canSend = message.trim().length > 0;
@@ -27,13 +44,17 @@ export default function Dispatcher({ embedded = false }) {
     textRef.current?.focus();
   }
 
-  function send(e) {
-    e?.preventDefault();
-    if (!canSend) return;
-    const alert = bus.broadcast({ stationId, message, priority });
+  function broadcast(text) {
+    const alert = bus.broadcast({ ...latest.current, message: text });
     setMessage('');
     setSent(alert);
     setTimeout(() => setSent((c) => (c?.id === alert.id ? null : c)), 5000);
+  }
+
+  function send(e) {
+    e?.preventDefault();
+    if (!canSend || dictation.listening) return;
+    broadcast(message);
     textRef.current?.focus();
   }
 
@@ -75,12 +96,38 @@ export default function Dispatcher({ embedded = false }) {
 
         {/* Message */}
         <div className="mt-6">
-          <div className="mb-1.5 flex items-baseline justify-between">
+          <div className="mb-1.5 flex items-center justify-between gap-3">
             <label htmlFor="dispatch-message" className="font-bold">
               Message
             </label>
-            {message.length > MAX_LEN * 0.8 && (
-              <span className="text-sm text-ink-3">{MAX_LEN - message.length} characters left</span>
+            {dictation.supported && (
+              <button
+                type="button"
+                onClick={dictation.listening ? dictation.stop : dictation.start}
+                aria-pressed={dictation.listening}
+                className={`inline-flex min-h-[40px] items-center gap-2 rounded-full px-4 text-sm font-bold ${
+                  dictation.listening
+                    ? 'bg-alert-critical text-white hover:bg-alert-critical/90'
+                    : 'border border-black hover:bg-mist'
+                }`}
+              >
+                {dictation.listening ? (
+                  <>
+                    <span className="relative flex h-2.5 w-2.5" aria-hidden>
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75 motion-reduce:animate-none" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-white" />
+                    </span>
+                    Stop
+                  </>
+                ) : (
+                  <>
+                    <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+                      <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2z" />
+                    </svg>
+                    Speak
+                  </>
+                )}
+              </button>
             )}
           </div>
           <textarea
@@ -89,13 +136,40 @@ export default function Dispatcher({ embedded = false }) {
             rows={3}
             maxLength={MAX_LEN}
             value={message}
+            readOnly={dictation.listening}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send(e);
             }}
-            placeholder="Type what you’d say over the PA"
-            className="w-full resize-y rounded-lg border border-rule px-3 py-2.5 text-lg leading-snug placeholder:text-ink-3 focus:border-black focus:outline-none"
+            placeholder={dictation.supported ? 'Type, or press Speak and talk like you would over the PA' : 'Type what you’d say over the PA'}
+            className={`w-full resize-y rounded-lg border px-3 py-2.5 text-lg leading-snug placeholder:text-ink-3 focus:outline-none ${
+              dictation.listening ? 'border-alert-critical bg-alert-critical/5' : 'border-rule focus:border-black'
+            }`}
           />
+          <div aria-live="polite" className="mt-1.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm">
+            {dictation.error ? (
+              <span className="font-bold text-alert-critical">{dictation.error}</span>
+            ) : dictation.listening ? (
+              <span className="text-ink-2">
+                Listening. {autoSend ? 'It sends when you stop talking.' : 'Stop talking and check the text before you broadcast.'}
+              </span>
+            ) : message.length > MAX_LEN * 0.8 ? (
+              <span className="text-ink-3">{MAX_LEN - message.length} characters left</span>
+            ) : (
+              <span />
+            )}
+            {dictation.supported && (
+              <label className="inline-flex cursor-pointer items-center gap-2 text-ink-2">
+                <input
+                  type="checkbox"
+                  checked={autoSend}
+                  onChange={(e) => setAutoSend(e.target.checked)}
+                  className="h-4 w-4 accent-black"
+                />
+                Send automatically when I stop talking
+              </label>
+            )}
+          </div>
         </div>
 
         {/* Common announcements */}
@@ -162,7 +236,7 @@ export default function Dispatcher({ embedded = false }) {
           )}
           <button
             type="submit"
-            disabled={!canSend}
+            disabled={!canSend || dictation.listening}
             className="min-h-[56px] w-full rounded-xl bg-black px-5 text-lg font-bold text-white hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-rule disabled:text-ink-3"
           >
             {stationId === ALL_STATIONS_ID ? 'Broadcast to all stations' : `Broadcast to ${station.name}`}
@@ -173,7 +247,7 @@ export default function Dispatcher({ embedded = false }) {
                 Broadcast to {getStation(sent.stationId).name} at {formatClock(sent.createdAt)}
                 {relay !== 'online' && (
                   <span className="block font-normal text-ink-3">
-                    Only this browser received it. Start the relay to reach phones.
+                    Only this browser received it. The alert server isn’t reachable.
                   </span>
                 )}
               </p>
