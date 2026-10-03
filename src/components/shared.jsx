@@ -72,7 +72,7 @@ export function StationSign({ stationId, onChange, children }) {
 }
 
 // Small icon badge for each priority, matching the alert banner icons:
-// notice = "!" in a navy circle, service alert = wrench in a yellow circle,
+// notice = "i" in a navy circle, service alert = wrench in a yellow circle,
 // urgent = "!" in a red triangle.
 export function PriorityBadge({ priority, className = 'h-4 w-4' }) {
   if (priority === 'warning') {
@@ -101,8 +101,8 @@ export function PriorityBadge({ priority, className = 'h-4 w-4' }) {
   return (
     <svg aria-hidden viewBox="0 0 24 24" className={`shrink-0 ${className}`}>
       <circle cx="12" cy="12" r="11.5" fill="#2B4C7E" />
-      <rect x="10.8" y="5.5" width="2.4" height="8.5" rx="1" fill="#fff" />
-      <circle cx="12" cy="17.6" r="1.5" fill="#fff" />
+      <circle cx="12" cy="6.8" r="1.5" fill="#fff" />
+      <rect x="10.8" y="10" width="2.4" height="8.5" rx="1" fill="#fff" />
     </svg>
   );
 }

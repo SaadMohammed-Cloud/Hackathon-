@@ -63,7 +63,7 @@ export default function AlertBanner({ alert, now, scale, reduceMotion, onReplay,
   );
 }
 
-// Notice: exclamation in a circle. Service alert: wrench. Urgent: warning triangle.
+// Notice: "i" in a circle. Service alert: wrench. Urgent: warning triangle.
 function PriorityIcon({ priority, cutout }) {
   if (priority === 'warning') {
     return (
@@ -76,8 +76,8 @@ function PriorityIcon({ priority, cutout }) {
     return (
       <svg aria-hidden viewBox="0 0 24 24" className="h-6 w-6 shrink-0">
         <circle cx="12" cy="12" r="10.5" fill="currentColor" />
-        <rect x="10.9" y="6" width="2.2" height="8" rx="1" fill={cutout} />
-        <circle cx="12" cy="17.3" r="1.4" fill={cutout} />
+        <circle cx="12" cy="7.2" r="1.4" fill={cutout} />
+        <rect x="10.9" y="10.2" width="2.2" height="7.8" rx="1" fill={cutout} />
       </svg>
     );
   }
