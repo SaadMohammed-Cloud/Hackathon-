@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { PriorityMark, RouteBullets, Sheet, StationList } from './shared.jsx';
+import { PriorityBadge, PriorityMark, RouteBullets, Sheet, StationList } from './shared.jsx';
 import { bus } from '../lib/bus.js';
 import { ALL_STATIONS_ID, PRIORITIES, QUICK_ALERTS, getStation } from '../lib/stations.js';
 import { dayLabel, formatAgo, formatClock, useBus, useNow, usePersistentState } from '../lib/hooks.js';
@@ -112,12 +112,7 @@ export default function Dispatcher({ embedded = false }) {
                     message === t.message ? 'border-black bg-black text-white' : 'border-rule hover:border-ink-3'
                   }`}
                 >
-                  <span
-                    aria-hidden
-                    className={`h-2 w-2 rounded-sm ${PRIORITIES[t.priority].swatch} ${
-                      t.priority === 'warning' && message !== t.message ? 'ring-1 ring-black/20' : ''
-                    }`}
-                  />
+                  <PriorityBadge priority={t.priority} />
                   {t.label}
                 </button>
               </li>
@@ -144,7 +139,7 @@ export default function Dispatcher({ embedded = false }) {
                   onChange={() => setPriority(key)}
                   className="sr-only"
                 />
-                <span aria-hidden className={`h-2.5 w-2.5 rounded-sm ${p.swatch} ${key === 'warning' ? 'ring-1 ring-black/20' : ''}`} />
+                <PriorityBadge priority={key} className="h-5 w-5" />
                 {p.label}
               </label>
             ))}
