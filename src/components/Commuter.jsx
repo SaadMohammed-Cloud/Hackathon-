@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AlertBanner from './AlertBanner.jsx';
-import { PriorityMark, Sheet, StationList, StationSign, Toggle } from './shared.jsx';
+import { Overlay, PriorityMark, Sheet, StationList, StationSign, Toggle } from './shared.jsx';
 import { bus } from '../lib/bus.js';
 import { ALL_STATIONS_ID, PHRASES, PRIORITIES, getStation, spokenText } from '../lib/stations.js';
 import { dayLabel, formatClock, useBus, useNow, usePersistentState } from '../lib/hooks.js';
@@ -133,7 +133,7 @@ export default function Commuter({ embedded = false }) {
         {liveRegion}
       </div>
 
-      {!activated && <ActivationGate station={station} onActivate={activate} contained={embedded} />}
+      {!activated && <ActivationGate station={station} onActivate={activate} />}
 
       <StationSign stationId={stationId} onChange={() => setSheet('station')}>
         <button
@@ -229,7 +229,7 @@ export default function Commuter({ embedded = false }) {
       </div>
 
       {sheet === 'station' && (
-        <Sheet title="Your station" onClose={() => setSheet(null)} contained={embedded}>
+        <Sheet title="Your station" onClose={() => setSheet(null)}>
           <StationList
             value={stationId}
             onPick={(id) => {
@@ -240,7 +240,7 @@ export default function Commuter({ embedded = false }) {
         </Sheet>
       )}
       {sheet === 'settings' && (
-        <Sheet title="Alert settings" onClose={() => setSheet(null)} contained={embedded}>
+        <Sheet title="Alert settings" onClose={() => setSheet(null)}>
           <SettingsPanel settings={settings} update={update} voices={voices} tts={tts} />
         </Sheet>
       )}
@@ -255,15 +255,16 @@ function voiceLabel(settings, voices, tts) {
   return voices[0]?.name ?? 'device voice';
 }
 
-function ActivationGate({ station, onActivate, contained }) {
+function ActivationGate({ station, onActivate }) {
   const btnRef = useRef(null);
-  useEffect(() => btnRef.current?.focus(), []);
+  useEffect(() => btnRef.current?.focus({ preventScroll: true }), []);
   return (
+    <Overlay pageInset="inset-x-0 bottom-0 top-[57px]" className="z-30">
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby="gate-title"
-      className={`${contained ? 'absolute inset-0' : 'fixed inset-x-0 bottom-0 top-[57px]'} z-30 flex flex-col justify-end bg-paper px-6 pb-8 pt-10 sm:justify-center`}
+      className="flex h-full flex-col justify-end overflow-y-auto bg-paper px-6 pb-8 pt-10 sm:justify-center"
     >
       <div className="mx-auto w-full max-w-sm">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-black">
@@ -296,6 +297,7 @@ function ActivationGate({ station, onActivate, contained }) {
         <p className="mt-5 text-sm text-ink-3">You can change this anytime in alert settings.</p>
       </div>
     </div>
+    </Overlay>
   );
 }
 

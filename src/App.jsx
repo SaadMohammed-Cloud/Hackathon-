@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import Commuter from './components/Commuter.jsx';
 import Dispatcher from './components/Dispatcher.jsx';
-import { ConnectionStatus } from './components/shared.jsx';
+import { ConnectionStatus, OverlayHost } from './components/shared.jsx';
 import { useHashRoute } from './lib/hooks.js';
 
 const TABS = [
@@ -63,6 +64,8 @@ export default function App() {
 
 // For presenting: the dispatcher console next to a rider's phone.
 function SideBySide() {
+  // Layer on top of the phone screen that the rider app's pop-ups render into.
+  const [phoneLayer, setPhoneLayer] = useState(null);
   return (
     <div className="min-h-[calc(100dvh-57px)] bg-mist">
       <div className="mx-auto grid max-w-6xl gap-8 px-4 py-8 md:grid-cols-[minmax(0,1fr)_380px]">
@@ -71,9 +74,12 @@ function SideBySide() {
         </div>
         <div className="md:sticky md:top-[81px] md:self-start">
           <div className="relative mx-auto h-[760px] max-h-[calc(100dvh-120px)] w-full max-w-[380px] overflow-hidden rounded-[2.5rem] border-[10px] border-black bg-paper shadow-xl">
-            <div className="h-full overflow-y-auto">
-              <Commuter embedded />
+            <div className="h-full overflow-y-auto overscroll-contain">
+              <OverlayHost.Provider value={{ el: phoneLayer }}>
+                <Commuter embedded />
+              </OverlayHost.Provider>
             </div>
+            <div ref={setPhoneLayer} className="pointer-events-none absolute inset-0 z-40 [&>*]:pointer-events-auto" />
           </div>
           <p className="mt-3 text-center text-sm text-ink-3">Rider’s phone</p>
         </div>

@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { createContext, useContext, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { ALL_STATIONS_ID, LINES, PRIORITIES, STATIONS, getStation } from '../lib/stations.js';
 import { useBus } from '../lib/hooks.js';
 
@@ -141,17 +142,32 @@ export function ConnectionStatus() {
   );
 }
 
-// Bottom sheet that slides up over its container (the page, or the demo phone).
-export function Sheet({ title, onClose, children, contained = false }) {
+// Where pop-ups (sheets, the "turn on alerts" screen) render. On a normal page
+// they cover the window. Inside the side-by-side demo phone they render into a
+// layer on top of the phone screen, so they never scroll away with the content.
+export const OverlayHost = createContext(null);
+
+export function Overlay({ children, className = '', pageInset = 'inset-0' }) {
+  const ctx = useContext(OverlayHost);
+  if (ctx && !ctx.el) return null; // demo phone layer not mounted yet
+  const target = ctx ? ctx.el : document.body;
+  return createPortal(
+    <div className={`${ctx ? 'absolute inset-0' : `fixed ${pageInset}`} ${className}`}>{children}</div>,
+    target,
+  );
+}
+
+// Bottom sheet that slides up over the page (or the demo phone).
+export function Sheet({ title, onClose, children }) {
   const panelRef = useRef(null);
   useEffect(() => {
-    panelRef.current?.focus();
+    panelRef.current?.focus({ preventScroll: true });
     const onKey = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
   return (
-    <div className={`${contained ? 'absolute' : 'fixed'} inset-0 z-40 flex items-end justify-center`}>
+    <Overlay className="z-40 flex items-end justify-center">
       <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 animate-fade-in bg-black/40" />
       <div
         ref={panelRef}
@@ -159,7 +175,7 @@ export function Sheet({ title, onClose, children, contained = false }) {
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative max-h-[85%] w-full max-w-lg animate-sheet-up overflow-y-auto rounded-t-2xl bg-paper pb-[max(1rem,env(safe-area-inset-bottom))] focus:outline-none"
+        className="relative max-h-[85%] w-full max-w-lg animate-sheet-up overflow-y-auto overscroll-contain rounded-t-2xl bg-paper pb-[max(1rem,env(safe-area-inset-bottom))] focus:outline-none"
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-rule bg-paper px-5 py-4">
           <h2 className="text-lg font-bold">{title}</h2>
@@ -169,7 +185,7 @@ export function Sheet({ title, onClose, children, contained = false }) {
         </div>
         {children}
       </div>
-    </div>
+    </Overlay>
   );
 }
 
